@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Environment variables
+.env
+.env.local
+*.key
+service-account-key.json
+
+# Logs
+*.log
+logs/
+.pm2/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*_backup.py
+*_vm_current.py
+
+# Videos and audio (too large)
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.mp3
+*.wav
+sample_videos/
+videos/
+
+# Fonts (if large)
+*.ttf
+*.otf

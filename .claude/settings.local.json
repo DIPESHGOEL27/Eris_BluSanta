@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(dir \"C:\\Users\\Dipesh_Goel\\AI Video Training\\ErisBluSanta\\bs-video-stitch-code\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

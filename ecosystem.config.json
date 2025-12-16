@@ -1,0 +1,54 @@
+{
+  "apps": [
+    {
+      "name": "blusanta-backend",
+      "script": "index.js",
+      "cwd": "/home/Dipesh_Goel/blusanta/backend",
+      "instances": 8,
+      "exec_mode": "cluster",
+      "watch": false,
+      "max_memory_restart": "1G",
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": 3001
+      },
+      "log_date_format": "YYYY-MM-DDTHH:mm:ss",
+      "error_file": "logs/backend-err.log",
+      "out_file": "logs/backend-out.log",
+      "merge_logs": true
+    },
+    {
+      "name": "blusanta-worker",
+      "script": "worker.js",
+      "cwd": "/home/Dipesh_Goel/blusanta/backend",
+      "instances": 1,
+      "exec_mode": "fork",
+      "watch": false,
+      "max_memory_restart": "500M",
+      "env": {
+        "NODE_ENV": "production",
+        "BACKEND_URL": "http://localhost:3001"
+      },
+      "log_date_format": "YYYY-MM-DDTHH:mm:ss",
+      "error_file": "logs/worker-err.log",
+      "out_file": "logs/worker-out.log"
+    },
+    {
+      "name": "blusanta-frontend",
+      "script": "npm",
+      "args": "start",
+      "cwd": "/home/Dipesh_Goel/blusanta/frontend",
+      "instances": 1,
+      "exec_mode": "cluster",
+      "watch": false,
+      "max_memory_restart": "500M",
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": 3000
+      },
+      "log_date_format": "YYYY-MM-DDTHH:mm:ss",
+      "error_file": "logs/frontend-err.log",
+      "out_file": "logs/frontend-out.log"
+    }
+  ]
+}

@@ -84,22 +84,38 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
         # Transcribe with Deepgram Nova-3 API
         logger.info(f"Transcribing audio with Deepgram Nova-3 API: {audio_path}")
         
+        # Healthcare keyterms for better recognition
+        keyterms = [
+            "BluSanta", "diabetes", "type 1 diabetes", "type 2 diabetes",
+            "insulin", "blood sugar", "glucose", "lifestyle diseases",
+            "allergies", "symptoms", "preventive measures", "medication",
+            "diet", "exercise", "wellness", "health"
+        ]
+        
         # Call Deepgram API with audio file
         with open(audio_path, "rb") as audio_file:
+            # Build params with keyterms
+            params = {
+                "model": "nova-3",
+                "language": language,
+                "punctuate": "true",
+                "smart_format": "true",
+                "paragraphs": "true",
+                "utterances": "true",
+                "diarize": "false",  # Single speaker per segment
+                "filler_words": "false"  # Remove uh, um for cleaner subtitles
+            }
+            # Add keyterms for better medical term recognition
+            for term in keyterms:
+                params.setdefault("keyterms", []).append(term) if isinstance(params.get("keyterms"), list) else None
+            
             response = requests.post(
                 "https://api.deepgram.com/v1/listen",
                 headers={
                     "Authorization": f"Token {DEEPGRAM_API_KEY}",
                     "Content-Type": "audio/mp3"
                 },
-                params={
-                    "model": "nova-3",
-                    "language": language,
-                    "punctuate": "true",
-                    "smart_format": "true",
-                    "utterances": "true",
-                    "diarize": "true"
-                },
+                params=params,
                 data=audio_file
             )
         
@@ -128,18 +144,22 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
             "[Script Info]\n"
             "Title: Generated Subtitles\n"
             "Original Script: Deepgram Nova-3 API\n"
-            "ScriptType: v4.00\n"
+            "ScriptType: v4.00+\n"
             "PlayResX: 1920\n"
-            "PlayResY: 1080\n\n"
+            "PlayResY: 1080\n"
+            "ScaledBorderAndShadow: yes\n\n"
         )
         
+        # Style: Bottom center (Alignment=2), single line, with outline for readability
+        # BorderStyle=1 (outline+shadow), Outline=2, Shadow=1
+        # MarginV=60 to position subtitles properly at bottom
         styles_info = (
             "[V4+ Styles]\n"
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
             "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
             "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-            "Style: Default, Arial, 40, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, "
-            "0, 0, 3, 1, 1, 2, 30, 30, 110, 1\n\n"
+            "Style: Default,Arial,44,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,"
+            "0,0,1,2,1,2,20,20,60,1\n\n"
         )
         
         events_header = (
@@ -150,21 +170,24 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
         content = [script_info, styles_info, events_header]
         
         # Build subtitle cues from word timestamps
-        # Rules: max 42 chars per line, min 1s duration, max 6s duration
-        MAX_CHARS = 42
+        # Use punctuated_word for proper punctuation and capitalization
+        # Rules: max 50 chars per line, min 1s duration, max 5s duration
+        MAX_CHARS = 50
         MIN_DURATION = 1.0
-        MAX_DURATION = 6.0
+        MAX_DURATION = 5.0
         
         i = 0
         while i < len(words):
             start = words[i]["start"]
-            text = words[i]["word"]
+            # Use punctuated_word if available (has punctuation), fallback to word
+            text = words[i].get("punctuated_word", words[i]["word"])
             end = words[i]["end"]
             j = i + 1
             
             # Accumulate words until char limit or duration limit
             while j < len(words):
-                candidate = text + " " + words[j]["word"]
+                next_word = words[j].get("punctuated_word", words[j]["word"])
+                candidate = text + " " + next_word
                 duration = words[j]["end"] - start
                 
                 # Stop if exceeds char limit or duration limit

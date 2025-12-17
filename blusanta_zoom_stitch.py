@@ -192,9 +192,6 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
             content.append(dialogue)
             
             i = j
-            
-            dialogue = f"Dialogue: Marked=0,{start_time},{end_time},Default,,0,0,0,,{safe_text}\n"
-            content.append(dialogue)
         
         with open(subtitle_path, 'w', encoding='utf-8') as f:
             f.write(''.join(content))

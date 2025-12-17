@@ -104,7 +104,7 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
                 transcript = openai.audio.transcriptions.create(
                     model="gpt-4o-transcribe",
                     file=audio_file,
-                    response_format="verbose_json",
+                    response_format="json",  # gpt-4o-transcribe supports json or text
                     language=language,
                     prompt=context_prompt
                 )
@@ -115,7 +115,7 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
                 transcript = openai.audio.transcriptions.create(
                     model="gpt-4o-transcribe",
                     file=audio_file,
-                    response_format="verbose_json",
+                    response_format="json",
                     language=language
                 )
         

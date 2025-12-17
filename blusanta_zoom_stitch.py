@@ -98,13 +98,13 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
         
         with open(audio_path, "rb") as audio_file:
             # Use gpt-4o-transcribe for higher quality transcription
-            # Supports: json or text response formats, prompts, and logprobs
-            # Note: timestamp_granularities[] not supported in gpt-4o models
+            # response_format="verbose_json" provides segments with timestamps
+            # Note: timestamp_granularities[] not supported in gpt-4o models (whisper-1 only)
             try:
                 transcript = openai.audio.transcriptions.create(
                     model="gpt-4o-transcribe",
                     file=audio_file,
-                    response_format="json",  # gpt-4o-transcribe supports json or text
+                    response_format="verbose_json",  # Provides segments with timestamps
                     language=language,
                     prompt=context_prompt
                 )
@@ -115,7 +115,7 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
                 transcript = openai.audio.transcriptions.create(
                     model="gpt-4o-transcribe",
                     file=audio_file,
-                    response_format="json",
+                    response_format="verbose_json",
                     language=language
                 )
         

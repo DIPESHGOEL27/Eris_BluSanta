@@ -52,11 +52,11 @@ logger = logging.getLogger(__name__)
 # SUBTITLE GENERATION FUNCTIONS
 # ==============================================================================
 
-def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str:
+def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> str:
     """
-    Generates subtitles from a video file using OpenAI GPT-4o Transcribe API.
+    Generates subtitles from a video file using Deepgram Nova-3 API.
     
-    Uses gpt-4o-transcribe model for higher quality transcription compared to whisper-1.
+    Uses Deepgram Nova-3 for high-quality transcription with word-level timestamps.
     
     Args:
         video_path: Path to the input video file
@@ -66,13 +66,9 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
         str: Path to the generated .ass subtitle file
     """
     try:
-        import openai
-        from dotenv import load_dotenv
-        load_dotenv()
-        
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-        if not openai.api_key:
-            logger.warning("OPENAI_API_KEY not found, skipping subtitle generation")
+        DEEPGRAM_API_KEY = "e73a2b27da0a3752d423b2174d5b6b398cdd8969"
+        if not DEEPGRAM_API_KEY:
+            logger.warning("DEEPGRAM_API_KEY not found, skipping subtitle generation")
             return None
         
         # Extract audio from video
@@ -85,39 +81,40 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
         ]
         subprocess.run(audio_cmd, check=True)
         
-        # Transcribe with GPT-4o Transcribe API (higher quality than Whisper)
-        logger.info(f"Transcribing audio with GPT-4o Transcribe API: {audio_path}")
+        # Transcribe with Deepgram Nova-3 API
+        logger.info(f"Transcribing audio with Deepgram Nova-3 API: {audio_path}")
         
-        # Context prompt helps GPT-4o understand the domain
-        # For gpt-4o-transcribe, prompts work like standard GPT-4o prompting
-        context_prompt = (
-            "The following audio is from BluSanta, a healthcare conversation between an agent and a doctor. "
-            "Topics include lifestyle diseases, allergies, symptoms, preventive measures, health, wellness, "
-            "medication, diet, and exercise. Transcribe accurately with proper punctuation."
-        )
-        
+        # Call Deepgram API with audio file
         with open(audio_path, "rb") as audio_file:
-            # Use gpt-4o-transcribe for higher quality transcription
-            # response_format="verbose_json" provides segments with timestamps
-            # Note: timestamp_granularities[] not supported in gpt-4o models (whisper-1 only)
-            try:
-                transcript = openai.audio.transcriptions.create(
-                    model="gpt-4o-transcribe",
-                    file=audio_file,
-                    response_format="verbose_json",  # Provides segments with timestamps
-                    language=language,
-                    prompt=context_prompt
-                )
-            except Exception as e:
-                # Fallback to simpler parameters if needed
-                logger.warning(f"Retrying with simpler parameters: {e}")
-                audio_file.seek(0)  # Reset file pointer
-                transcript = openai.audio.transcriptions.create(
-                    model="gpt-4o-transcribe",
-                    file=audio_file,
-                    response_format="verbose_json",
-                    language=language
-                )
+            response = requests.post(
+                "https://api.deepgram.com/v1/listen",
+                headers={
+                    "Authorization": f"Token {DEEPGRAM_API_KEY}",
+                    "Content-Type": "audio/mp3"
+                },
+                params={
+                    "model": "nova-3",
+                    "language": language,
+                    "punctuate": "true",
+                    "smart_format": "true",
+                    "utterances": "true",
+                    "diarize": "true"
+                },
+                data=audio_file
+            )
+        
+        if response.status_code != 200:
+            logger.error(f"Deepgram API error: {response.status_code} - {response.text}")
+            return None
+        
+        result = response.json()
+        
+        # Extract word-level timestamps
+        words = result.get("results", {}).get("channels", [{}])[0].get("alternatives", [{}])[0].get("words", [])
+        
+        if not words:
+            logger.warning("No words with timestamps returned from Deepgram")
+            return None
         
         # Generate ASS subtitle file
         subtitles_dir = os.path.join(os.path.dirname(video_path), 'subtitles')
@@ -130,7 +127,7 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
         script_info = (
             "[Script Info]\n"
             "Title: Generated Subtitles\n"
-            "Original Script: GPT-4o Transcribe API\n"
+            "Original Script: Deepgram Nova-3 API\n"
             "ScriptType: v4.00\n"
             "PlayResX: 1920\n"
             "PlayResY: 1080\n\n"
@@ -152,72 +149,49 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
         
         content = [script_info, styles_info, events_header]
         
-        # Add dialogue lines - handle both dict and object formats
-        segments = []
-        if hasattr(transcript, 'segments'):
-            segments = transcript.segments
-        elif isinstance(transcript, dict):
-            segments = transcript.get('segments', []) or []
-
-        # If the model returns only plain text (common for gpt-4o-transcribe json),
-        # create a single segment without timestamps so subtitle generation continues.
-        if not segments:
-            text_val = getattr(transcript, 'text', None)
-            if text_val is None and isinstance(transcript, dict):
-                text_val = transcript.get('text')
-            if text_val:
-                segments = [{"start": 0.0, "end": 5.0, "text": text_val}]
-
-        # Filter out segments that are likely hallucinations or music descriptions
-        # GPT-4o is better at this than Whisper, but still good to filter
-        skip_patterns = [
-            "this video is a conversation",
-            "this is a conversation",
-            "music",
-            "[music]",
-            "(music)",
-            "♪",
-            "♫",
-            "thank you for watching",
-            "subscribe",
-            "like and subscribe",
-        ]
+        # Build subtitle cues from word timestamps
+        # Rules: max 42 chars per line, min 1s duration, max 6s duration
+        MAX_CHARS = 42
+        MIN_DURATION = 1.0
+        MAX_DURATION = 6.0
         
-        # INTRO_DURATION: Skip subtitles in the first 30 seconds (musical intro with no dialogue)
-        # Reduced from 34s because early dialogue was getting skipped around 0:34
-        INTRO_DURATION = 0.0  # Disabled for podcast segments
-        
-        for segment in segments:
-            # Handle both dict and object attribute access
-            start = segment.start if hasattr(segment, 'start') else segment['start']
-            end = segment.end if hasattr(segment, 'end') else segment['end']
-            text = segment.text if hasattr(segment, 'text') else segment['text']
+        i = 0
+        while i < len(words):
+            start = words[i]["start"]
+            text = words[i]["word"]
+            end = words[i]["end"]
+            j = i + 1
             
-            safe_text = text.strip()
+            # Accumulate words until char limit or duration limit
+            while j < len(words):
+                candidate = text + " " + words[j]["word"]
+                duration = words[j]["end"] - start
+                
+                # Stop if exceeds char limit or duration limit
+                if len(candidate) > MAX_CHARS or duration > MAX_DURATION:
+                    break
+                
+                text = candidate
+                end = words[j]["end"]
+                j += 1
             
-            # Skip segments that occur during the intro window
-            if start < INTRO_DURATION:
-                logger.info(f"Skipping intro subtitle at {start:.1f}s: '{safe_text[:50]}...'")
-                continue
+            # Ensure minimum duration
+            if (end - start) < MIN_DURATION:
+                end = start + MIN_DURATION
             
-            # Skip segments that match hallucination patterns
-            text_lower = safe_text.lower()
-            should_skip = any(pattern in text_lower for pattern in skip_patterns)
-            
-            # Also skip very short segments (likely noise) or very long ones spanning most of video
-            duration = end - start
-            if duration < 0.3 or duration > 60:
-                should_skip = True
-            
-            if should_skip:
-                logger.info(f"Skipping subtitle segment: '{safe_text[:50]}...' (duration: {duration:.1f}s)")
-                continue
+            # Add slight padding to end
+            end += 0.05
             
             start_time = format_ass_timestamp(start)
             end_time = format_ass_timestamp(end)
             
             # Escape special characters for ASS format
-            safe_text = safe_text.replace('\\', '\\\\').replace('{', '{{').replace('}', '}}')
+            safe_text = text.strip().replace('\\', '\\\\').replace('{', '{{').replace('}', '}}')
+            
+            dialogue = f"Dialogue: Marked=0,{start_time},{end_time},Default,,0,0,0,,{safe_text}\n"
+            content.append(dialogue)
+            
+            i = j
             
             dialogue = f"Dialogue: Marked=0,{start_time},{end_time},Default,,0,0,0,,{safe_text}\n"
             content.append(dialogue)
@@ -1550,7 +1524,7 @@ def blusanta_video_stitching(payload: Dict[str, Any]) -> bool:
                 # Generate subtitles for this podcast segment
                 try:
                     logger.info(f"Generating subtitles for podcast segment {part_num}...")
-                    subtitle_path = generate_subtitles_with_openai(podcast_temp, 'en')
+                    subtitle_path = generate_subtitles_with_deepgram(podcast_temp, 'en')
                     if subtitle_path and os.path.exists(subtitle_path):
                         podcast_with_subs = os.path.join(job_temp_dir, f"p{part_num}_with_subs.mp4")
                         apply_subtitles_to_video(podcast_temp, subtitle_path, podcast_with_subs)
@@ -1587,7 +1561,7 @@ def blusanta_video_stitching(payload: Dict[str, Any]) -> bool:
                     # Generate subtitles for audio overlay segment (TTS greeting/thank-you)
                     try:
                         logger.info(f"Generating subtitles for audio overlay segment {part_num}...")
-                        subtitle_path = generate_subtitles_with_openai(temp_output, 'en')
+                        subtitle_path = generate_subtitles_with_deepgram(temp_output, 'en')
                         if subtitle_path and os.path.exists(subtitle_path):
                             overlay_with_subs = temp_output.replace('.mp4', '_with_subs.mp4')
                             apply_subtitles_to_video(temp_output, subtitle_path, overlay_with_subs)
@@ -1662,7 +1636,7 @@ def blusanta_video_stitching(payload: Dict[str, Any]) -> bool:
         # and generated per-segment for podcast videos
         # logger.info("STEP 4B: Generating subtitles for final video...")
         # try:
-        #     subtitle_path = generate_subtitles_with_openai(final_output, 'en')
+        #     subtitle_path = generate_subtitles_with_deepgram(final_output, 'en')
         #     if subtitle_path and os.path.exists(subtitle_path):
         #         final_with_subtitles = final_output.replace('.mp4', '_with_subs.mp4')
         #         apply_subtitles_to_video(final_output, subtitle_path, final_with_subtitles)

@@ -150,16 +150,18 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
             "ScaledBorderAndShadow: yes\n\n"
         )
         
-        # Style: Bottom center (Alignment=2), single line, with outline for readability
-        # BorderStyle=1 (outline+shadow), Outline=2, Shadow=1
-        # MarginV=60 to position subtitles properly at bottom
+        # Style matching pre-burned const video subtitles:
+        # - Single line, bottom center (Alignment=2)
+        # - Dark semi-transparent background box (BorderStyle=3, BackColour=&H80000000)
+        # - White text, no outline needed with box style
+        # - Font: Arial, Size 42, Bold
         styles_info = (
             "[V4+ Styles]\n"
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
             "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
             "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-            "Style: Default,Arial,44,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,"
-            "0,0,1,2,1,2,20,20,60,1\n\n"
+            "Style: Default,Arial,42,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,"
+            "0,0,3,0,0,2,20,20,50,1\n\n"
         )
         
         events_header = (

@@ -54,7 +54,9 @@ logger = logging.getLogger(__name__)
 
 def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str:
     """
-    Generates subtitles from a video file using OpenAI Whisper API.
+    Generates subtitles from a video file using OpenAI GPT-4o Transcribe API.
+    
+    Uses gpt-4o-transcribe model for higher quality transcription compared to whisper-1.
     
     Args:
         video_path: Path to the input video file
@@ -83,38 +85,38 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
         ]
         subprocess.run(audio_cmd, check=True)
         
-        # Transcribe with Whisper API
-        logger.info(f"Transcribing audio with Whisper API: {audio_path}")
+        # Transcribe with GPT-4o Transcribe API (higher quality than Whisper)
+        logger.info(f"Transcribing audio with GPT-4o Transcribe API: {audio_path}")
         
-        # Context prompt helps Whisper understand the domain but should NOT appear in subtitles
-        # Keep it short and focused on vocabulary hints, not full sentences
+        # Context prompt helps GPT-4o understand the domain
+        # For gpt-4o-transcribe, prompts work like standard GPT-4o prompting
         context_prompt = (
-            "BluSanta, doctor, lifestyle diseases, allergies, symptoms, preventive measures, "
-            "health, wellness, medication, diet, exercise"
+            "The following audio is from BluSanta, a healthcare conversation between an agent and a doctor. "
+            "Topics include lifestyle diseases, allergies, symptoms, preventive measures, health, wellness, "
+            "medication, diet, and exercise. Transcribe accurately with proper punctuation."
         )
         
         with open(audio_path, "rb") as audio_file:
-            # Use the new OpenAI client format
-            # Note: timestamp_granularity might not be supported in older versions
-            # Try with it first, fall back if it fails
+            # Use gpt-4o-transcribe for higher quality transcription
+            # Supports: json or text response formats, prompts, and logprobs
+            # Note: timestamp_granularities[] not supported in gpt-4o models
             try:
                 transcript = openai.audio.transcriptions.create(
-                    model="whisper-1",
+                    model="gpt-4o-transcribe",
                     file=audio_file,
                     response_format="verbose_json",
                     language=language,
                     prompt=context_prompt
                 )
-            except TypeError as e:
-                # If timestamp_granularity is not supported, try without it
-                logger.warning(f"Retrying without timestamp_granularity: {e}")
+            except Exception as e:
+                # Fallback to simpler parameters if needed
+                logger.warning(f"Retrying with simpler parameters: {e}")
                 audio_file.seek(0)  # Reset file pointer
                 transcript = openai.audio.transcriptions.create(
-                    model="whisper-1",
+                    model="gpt-4o-transcribe",
                     file=audio_file,
                     response_format="verbose_json",
-                    language=language,
-                    prompt=context_prompt
+                    language=language
                 )
         
         # Generate ASS subtitle file
@@ -128,7 +130,7 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
         script_info = (
             "[Script Info]\n"
             "Title: Generated Subtitles\n"
-            "Original Script: Whisper API\n"
+            "Original Script: GPT-4o Transcribe API\n"
             "ScriptType: v4.00\n"
             "PlayResX: 1920\n"
             "PlayResY: 1080\n\n"
@@ -153,7 +155,7 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
         # Add dialogue lines - handle both dict and object formats
         segments = transcript.segments if hasattr(transcript, 'segments') else transcript.get('segments', [])
         # Filter out segments that are likely hallucinations or music descriptions
-        # These often occur when Whisper tries to transcribe music/silence
+        # GPT-4o is better at this than Whisper, but still good to filter
         skip_patterns = [
             "this video is a conversation",
             "this is a conversation",

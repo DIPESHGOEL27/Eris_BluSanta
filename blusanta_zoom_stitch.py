@@ -153,7 +153,21 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
         content = [script_info, styles_info, events_header]
         
         # Add dialogue lines - handle both dict and object formats
-        segments = transcript.segments if hasattr(transcript, 'segments') else transcript.get('segments', [])
+        segments = []
+        if hasattr(transcript, 'segments'):
+            segments = transcript.segments
+        elif isinstance(transcript, dict):
+            segments = transcript.get('segments', []) or []
+
+        # If the model returns only plain text (common for gpt-4o-transcribe json),
+        # create a single segment without timestamps so subtitle generation continues.
+        if not segments:
+            text_val = getattr(transcript, 'text', None)
+            if text_val is None and isinstance(transcript, dict):
+                text_val = transcript.get('text')
+            if text_val:
+                segments = [{"start": 0.0, "end": 5.0, "text": text_val}]
+
         # Filter out segments that are likely hallucinations or music descriptions
         # GPT-4o is better at this than Whisper, but still good to filter
         skip_patterns = [

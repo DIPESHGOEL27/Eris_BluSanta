@@ -719,9 +719,13 @@ export default function AssessmentForm() {
             <div className="flex gap-4 mt-6">
               <button
                 type="button"
-                className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-6 rounded-md transition-colors font-medium"
+                className={`py-2 px-6 rounded-md transition-colors font-medium ${
+                  isUploading || isUploaded || !formData.employeeName
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    : "bg-blue-500 hover:bg-blue-600 text-white"
+                }`}
                 onClick={handleUpload}
-                disabled={isUploading || isUploaded}
+                disabled={isUploading || isUploaded || !formData.employeeName}
               >
                 {isUploading
                   ? "Uploading..."
@@ -733,16 +737,21 @@ export default function AssessmentForm() {
                 type="submit"
                 className={`py-2 px-6 rounded-md transition-colors font-medium
                             ${
-                              !isUploaded || isSubmitting
+                              !isUploaded || isSubmitting || !formData.employeeName
                                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                                 : "bg-green-500 hover:bg-green-600 text-white"
                             }
                           `}
-                disabled={!isUploaded || isSubmitting}
+                disabled={!isUploaded || isSubmitting || !formData.employeeName}
               >
                 {isSubmitting ? "Submitting..." : "Submit"}
               </button>
             </div>
+            {!formData.employeeName && formData.employeeCode && (
+              <p className="text-red-500 text-sm mt-2">
+                Please enter a valid Employee Code from the MR list to continue
+              </p>
+            )}
           </div>
 
           {/* Right Column - Guidelines */}

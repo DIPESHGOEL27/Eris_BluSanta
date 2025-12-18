@@ -171,8 +171,15 @@ export default function AssessmentForm() {
       case "employeeCode":
         if (!value) {
           errorMessage = "Employee Code is required";
+        } else {
+          // Check if employee code exists in the MR list
+          const employee = employees.find(
+            (emp) => emp["Emp Code"] === value.toUpperCase()
+          );
+          if (!employee) {
+            errorMessage = "Employee Code not found in MR list";
+          }
         }
-        // Adjust validation pattern based on your employee code format
         break;
       case "drCode":
         if (!value) {
@@ -455,12 +462,18 @@ export default function AssessmentForm() {
                 value={formData.employeeCode}
                 onChange={handleInputChange}
                 className={`w-full p-2 border rounded bg-white text-black ${
-                  errors.employeeCode ? "border-red-500" : "border-gray-300"
+                  errors.employeeCode ? "border-red-500" : 
+                  formData.employeeName ? "border-green-500" : "border-gray-300"
                 }`}
               />
               {errors.employeeCode && (
                 <p className="text-red-500 text-xs mt-1">
                   {errors.employeeCode}
+                </p>
+              )}
+              {!errors.employeeCode && formData.employeeName && formData.employeeCode && (
+                <p className="text-green-600 text-xs mt-1">
+                  ✓ Employee found in MR list
                 </p>
               )}
               {loading && (

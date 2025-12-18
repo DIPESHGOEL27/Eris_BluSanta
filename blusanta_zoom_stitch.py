@@ -152,16 +152,18 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
         
         # Style matching pre-burned const video subtitles:
         # - Single line, bottom center (Alignment=2)
-        # - Dark semi-transparent background box (BorderStyle=3, BackColour=&H80000000)
-        # - White text, no outline needed with box style
+        # - Dark opaque background box (BorderStyle=4 for opaque box)
+        # - White text on dark background
         # - Font: Arial, Size 42, Bold
+        # ASS color format: &HAABBGGRR (Alpha, Blue, Green, Red)
+        # BackColour &HC0000000 = semi-transparent black (C0 alpha = 75% opaque)
         styles_info = (
             "[V4+ Styles]\n"
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
             "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
             "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-            "Style: Default,Arial,42,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,"
-            "0,0,3,0,0,2,20,20,50,1\n\n"
+            "Style: Default,Arial,42,&H00FFFFFF,&H000000FF,&H00000000,&HC0000000,-1,0,0,0,100,100,"
+            "0,0,4,0,2,2,20,20,50,1\n\n"
         )
         
         events_header = (
@@ -273,12 +275,16 @@ def apply_subtitles_to_video(video_path: str, subtitle_path: str, output_path: s
     
     cfg = VIDEO_CONFIG
     
+    # Use subtitles filter with force_style to ensure dark background box renders
+    # force_style overrides ASS styles to guarantee consistent appearance
+    force_style = "FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,BackColour=&HC0000000,BorderStyle=4,Outline=0,Shadow=2,Alignment=2,MarginV=30"
+    
     # Use stream copy for audio, only re-encode video with subtitles
     # This preserves exact timing from input video
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error",
         "-i", video_path,
-        "-vf", f"ass={safe_sub_path}",
+        "-vf", f"subtitles={safe_sub_path}:force_style='{force_style}'",
         # Re-encode video (required for subtitle burn-in)
         "-c:v", cfg['codec'],
         "-preset", cfg['preset'],

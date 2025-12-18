@@ -52,11 +52,9 @@ logger = logging.getLogger(__name__)
 # SUBTITLE GENERATION FUNCTIONS
 # ==============================================================================
 
-def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> str:
+def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str:
     """
-    Generates subtitles from a video file using Deepgram Nova-3 API.
-    
-    Uses Deepgram Nova-3 for high-quality transcription with word-level timestamps.
+    Generates subtitles from a video file using OpenAI Whisper API.
     
     Args:
         video_path: Path to the input video file
@@ -66,9 +64,13 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
         str: Path to the generated .ass subtitle file
     """
     try:
-        DEEPGRAM_API_KEY = "e73a2b27da0a3752d423b2174d5b6b398cdd8969"
-        if not DEEPGRAM_API_KEY:
-            logger.warning("DEEPGRAM_API_KEY not found, skipping subtitle generation")
+        import openai
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        if not openai.api_key:
+            logger.warning("OPENAI_API_KEY not found, skipping subtitle generation")
             return None
         
         # Extract audio from video
@@ -81,56 +83,39 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
         ]
         subprocess.run(audio_cmd, check=True)
         
-        # Transcribe with Deepgram Nova-3 API
-        logger.info(f"Transcribing audio with Deepgram Nova-3 API: {audio_path}")
+        # Transcribe with Whisper API
+        logger.info(f"Transcribing audio with Whisper API: {audio_path}")
         
-        # Healthcare keyterms for better recognition
-        keyterms = [
-            "BluSanta", "diabetes", "type 1 diabetes", "type 2 diabetes",
-            "insulin", "blood sugar", "glucose", "lifestyle diseases",
-            "allergies", "symptoms", "preventive measures", "medication",
-            "diet", "exercise", "wellness", "health"
-        ]
+        # Context prompt helps Whisper understand the domain but should NOT appear in subtitles
+        # Keep it short and focused on vocabulary hints, not full sentences
+        context_prompt = (
+            "BluSanta, doctor, lifestyle diseases, allergies, symptoms, preventive measures, "
+            "health, wellness, medication, diet, exercise"
+        )
         
-        # Call Deepgram API with audio file
         with open(audio_path, "rb") as audio_file:
-            # Build params with keyterms
-            params = {
-                "model": "nova-3",
-                "language": language,
-                "punctuate": "true",
-                "smart_format": "true",
-                "paragraphs": "true",
-                "utterances": "true",
-                "diarize": "false",  # Single speaker per segment
-                "filler_words": "false"  # Remove uh, um for cleaner subtitles
-            }
-            # Add keyterms for better medical term recognition
-            for term in keyterms:
-                params.setdefault("keyterms", []).append(term) if isinstance(params.get("keyterms"), list) else None
-            
-            response = requests.post(
-                "https://api.deepgram.com/v1/listen",
-                headers={
-                    "Authorization": f"Token {DEEPGRAM_API_KEY}",
-                    "Content-Type": "audio/mp3"
-                },
-                params=params,
-                data=audio_file
-            )
-        
-        if response.status_code != 200:
-            logger.error(f"Deepgram API error: {response.status_code} - {response.text}")
-            return None
-        
-        result = response.json()
-        
-        # Extract word-level timestamps
-        words = result.get("results", {}).get("channels", [{}])[0].get("alternatives", [{}])[0].get("words", [])
-        
-        if not words:
-            logger.warning("No words with timestamps returned from Deepgram")
-            return None
+            # Use the new OpenAI client format
+            # Note: timestamp_granularity might not be supported in older versions
+            # Try with it first, fall back if it fails
+            try:
+                transcript = openai.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="verbose_json",
+                    language=language,
+                    prompt=context_prompt
+                )
+            except TypeError as e:
+                # If timestamp_granularity is not supported, try without it
+                logger.warning(f"Retrying without timestamp_granularity: {e}")
+                audio_file.seek(0)  # Reset file pointer
+                transcript = openai.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="verbose_json",
+                    language=language,
+                    prompt=context_prompt
+                )
         
         # Generate ASS subtitle file
         subtitles_dir = os.path.join(os.path.dirname(video_path), 'subtitles')
@@ -143,15 +128,12 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
         script_info = (
             "[Script Info]\n"
             "Title: Generated Subtitles\n"
-            "Original Script: Deepgram Nova-3 API\n"
+            "Original Script: Whisper API\n"
             "ScriptType: v4.00\n"
             "PlayResX: 1920\n"
             "PlayResY: 1080\n\n"
         )
         
-        # Original whisper-style subtitle formatting
-        # BorderStyle=3 (opaque box), Outline=1, Shadow=1
-        # Alignment=2 (bottom center), MarginV=110 (distance from bottom)
         styles_info = (
             "[V4+ Styles]\n"
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
@@ -168,52 +150,52 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
         
         content = [script_info, styles_info, events_header]
         
-        # Build subtitle cues from word timestamps
-        # Use punctuated_word for proper punctuation and capitalization
-        # Rules: max 50 chars per line, min 1s duration, max 5s duration
-        MAX_CHARS = 50
-        MIN_DURATION = 1.0
-        MAX_DURATION = 5.0
+        # Add dialogue lines - handle both dict and object formats
+        segments = transcript.segments if hasattr(transcript, 'segments') else transcript.get('segments', [])
+        # Filter out segments that are likely hallucinations or music descriptions
+        # These often occur when Whisper tries to transcribe music/silence
+        skip_patterns = [
+            "this video is a conversation",
+            "this is a conversation",
+            "music",
+            "[music]",
+            "(music)",
+            "♪",
+            "♫",
+            "thank you for watching",
+            "subscribe",
+            "like and subscribe",
+        ]
         
-        i = 0
-        while i < len(words):
-            start = words[i]["start"]
-            # Use punctuated_word if available (has punctuation), fallback to word
-            text = words[i].get("punctuated_word", words[i]["word"])
-            end = words[i]["end"]
-            j = i + 1
+        for segment in segments:
+            # Handle both dict and object attribute access
+            start = segment.start if hasattr(segment, 'start') else segment['start']
+            end = segment.end if hasattr(segment, 'end') else segment['end']
+            text = segment.text if hasattr(segment, 'text') else segment['text']
             
-            # Accumulate words until char limit or duration limit
-            while j < len(words):
-                next_word = words[j].get("punctuated_word", words[j]["word"])
-                candidate = text + " " + next_word
-                duration = words[j]["end"] - start
-                
-                # Stop if exceeds char limit or duration limit
-                if len(candidate) > MAX_CHARS or duration > MAX_DURATION:
-                    break
-                
-                text = candidate
-                end = words[j]["end"]
-                j += 1
+            safe_text = text.strip()
             
-            # Ensure minimum duration
-            if (end - start) < MIN_DURATION:
-                end = start + MIN_DURATION
+            # Skip segments that match hallucination patterns
+            text_lower = safe_text.lower()
+            should_skip = any(pattern in text_lower for pattern in skip_patterns)
             
-            # Add slight padding to end
-            end += 0.05
+            # Also skip very short segments (likely noise) or very long ones spanning most of video
+            duration = end - start
+            if duration < 0.3 or duration > 60:
+                should_skip = True
+            
+            if should_skip:
+                logger.info(f"Skipping subtitle segment: '{safe_text[:50]}...' (duration: {duration:.1f}s)")
+                continue
             
             start_time = format_ass_timestamp(start)
             end_time = format_ass_timestamp(end)
             
             # Escape special characters for ASS format
-            safe_text = text.strip().replace('\\', '\\\\').replace('{', '{{').replace('}', '}}')
+            safe_text = safe_text.replace('\\', '\\\\').replace('{', '{{').replace('}', '}}')
             
             dialogue = f"Dialogue: Marked=0,{start_time},{end_time},Default,,0,0,0,,{safe_text}\n"
             content.append(dialogue)
-            
-            i = j
         
         with open(subtitle_path, 'w', encoding='utf-8') as f:
             f.write(''.join(content))
@@ -926,30 +908,6 @@ def create_podcast_zoom_segment(
     cfg = VIDEO_CONFIG
 
     # Doctor video duration drives the entire segment timing
-    # First, transcode doctor video to ensure compatible audio codec
-    # Some videos have unsupported audio codecs like 'apac' that cause FFmpeg failures
-    job_temp_dir = os.path.dirname(output_path)
-    doctor_video_transcoded = os.path.join(job_temp_dir, 'doctor_transcoded.mp4')
-    
-    logger.info(f"Transcoding doctor video to ensure audio compatibility...")
-    transcode_cmd = [
-        'ffmpeg', '-y', '-i', doctor_video,
-        '-c:v', 'copy',  # Copy video stream as-is
-        '-c:a', 'aac',   # Convert audio to AAC
-        '-ar', '44100',  # Standard sample rate
-        '-ac', '2',      # Stereo
-        '-b:a', '128k',  # Standard bitrate
-        doctor_video_transcoded
-    ]
-    
-    try:
-        subprocess.run(transcode_cmd, check=True, capture_output=True, text=True)
-        doctor_video = doctor_video_transcoded  # Use transcoded version
-        logger.info(f"✓ Doctor video transcoded successfully")
-    except subprocess.CalledProcessError as e:
-        logger.warning(f"Audio transcoding failed: {e.stderr}, continuing with original video")
-        # If transcoding fails, try to continue with original
-    
     duration = get_media_duration(doctor_video)
     if duration <= 0:
         raise ValueError(f"Invalid doctor video duration: {duration}")
@@ -1168,14 +1126,6 @@ def create_podcast_zoom_segment(
     # -------------------------------------------------------------------------
     # BUILD AND RUN FFMPEG COMMAND
     # -------------------------------------------------------------------------
-    
-    # Write filter_complex to a file to avoid command-line length issues
-    # FFmpeg can fail with "Invalid argument" if filter_complex is too long
-    # Get temp directory from output_path (it's in the same directory)
-    job_temp_dir = os.path.dirname(output_path)
-    filter_script_path = os.path.join(job_temp_dir, 'filter_script.txt')
-    with open(filter_script_path, 'w', encoding='utf-8') as f:
-        f.write(filter_complex)
 
     cmd = [
         "ffmpeg", "-y",
@@ -1186,8 +1136,8 @@ def create_podcast_zoom_segment(
         "-i", looped_blusanta,
         # Input 2: Doctor video
         "-i", doctor_video,
-        # Apply filter complex from script file (avoids command-line length issues)
-        "-filter_complex_script", filter_script_path,
+        # Apply filter complex
+        "-filter_complex", filter_complex,
         # Map video from filter output
         "-map", "[v]",
         # Map audio from doctor video (input 2)
@@ -1543,7 +1493,7 @@ def blusanta_video_stitching(payload: Dict[str, Any]) -> bool:
                 # Generate subtitles for this podcast segment
                 try:
                     logger.info(f"Generating subtitles for podcast segment {part_num}...")
-                    subtitle_path = generate_subtitles_with_deepgram(podcast_temp, 'en')
+                    subtitle_path = generate_subtitles_with_openai(podcast_temp, 'en')
                     if subtitle_path and os.path.exists(subtitle_path):
                         podcast_with_subs = os.path.join(job_temp_dir, f"p{part_num}_with_subs.mp4")
                         apply_subtitles_to_video(podcast_temp, subtitle_path, podcast_with_subs)
@@ -1577,22 +1527,22 @@ def blusanta_video_stitching(payload: Dict[str, Any]) -> bool:
                     replace_audio_and_trim(actor_vid, audio_file, temp_output)
                     logger.info(f"Part {part_num} (Audio Overlay): Audio replaced")
                     
-                    # Generate subtitles for audio overlay segment (TTS greeting/thank-you)
+                    # Generate subtitles for this audio overlay segment
                     try:
                         logger.info(f"Generating subtitles for audio overlay segment {part_num}...")
-                        subtitle_path = generate_subtitles_with_deepgram(temp_output, 'en')
+                        subtitle_path = generate_subtitles_with_openai(temp_output, 'en')
                         if subtitle_path and os.path.exists(subtitle_path):
-                            overlay_with_subs = temp_output.replace('.mp4', '_with_subs.mp4')
+                            overlay_with_subs = os.path.join(job_temp_dir, f"p{part_num}_with_subs.mp4")
                             apply_subtitles_to_video(temp_output, subtitle_path, overlay_with_subs)
-                            logger.info(f"✓ Applied subtitles to audio overlay segment {part_num}")
+                            logger.info(f"✅ Applied subtitles to audio overlay segment {part_num}")
+                            # Move the subtitled version to final path
                             shutil.move(overlay_with_subs, output_seg)
-                            if os.path.exists(temp_output):
-                                os.remove(temp_output)
                         else:
-                            logger.warning(f"⚠ No subtitles generated for segment {part_num}")
+                            logger.warning(f"⚠️ Subtitle generation failed for segment {part_num}, using without subtitles")
                             shutil.move(temp_output, output_seg)
-                    except Exception as sub_err:
-                        logger.warning(f"⚠ Subtitle error for segment {part_num}: {sub_err}")
+                    except Exception as subtitle_error:
+                        logger.error(f"❌ Subtitle error for segment {part_num}: {subtitle_error}")
+                        logger.warning("⚠️ Using audio overlay segment without subtitles")
                         shutil.move(temp_output, output_seg)
                 else:
                     # CONSTANT SEGMENTS
@@ -1655,7 +1605,7 @@ def blusanta_video_stitching(payload: Dict[str, Any]) -> bool:
         # and generated per-segment for podcast videos
         # logger.info("STEP 4B: Generating subtitles for final video...")
         # try:
-        #     subtitle_path = generate_subtitles_with_deepgram(final_output, 'en')
+        #     subtitle_path = generate_subtitles_with_openai(final_output, 'en')
         #     if subtitle_path and os.path.exists(subtitle_path):
         #         final_with_subtitles = final_output.replace('.mp4', '_with_subs.mp4')
         #         apply_subtitles_to_video(final_output, subtitle_path, final_with_subtitles)
@@ -1728,11 +1678,11 @@ def blusanta_video_stitching(payload: Dict[str, Any]) -> bool:
         # Cleanup: Set machine status to free
         os.environ["machine_status"] = "free"
 
-        # Cleanup temp files after processing
-        try:
-            shutil.rmtree(job_temp_dir)
-        except:
-            pass
+        # Optionally cleanup temp files (comment out for debugging)
+        # try:
+        #     shutil.rmtree(job_temp_dir)
+        # except:
+        #     pass
 
 
 # ==============================================================================

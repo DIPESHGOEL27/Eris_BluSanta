@@ -10,6 +10,7 @@ Upgraded subtitle generation from `whisper-1` to `gpt-4o-transcribe` for higher 
 ## Changes Made
 
 ### Model Upgrade
+
 - **Old Model**: `whisper-1`
 - **New Model**: `gpt-4o-transcribe`
 
@@ -23,22 +24,25 @@ Upgraded subtitle generation from `whisper-1` to `gpt-4o-transcribe` for higher 
 ### Prompt Improvements
 
 **Old Prompt** (vocabulary hints):
+
 ```python
-"BluSanta, doctor, lifestyle diseases, allergies, symptoms, preventive measures, 
+"BluSanta, doctor, lifestyle diseases, allergies, symptoms, preventive measures,
 health, wellness, medication, diet, exercise"
 ```
 
 **New Prompt** (context-aware):
+
 ```python
-"The following audio is from BluSanta, a healthcare conversation between an agent 
-and a doctor. Topics include lifestyle diseases, allergies, symptoms, preventive 
-measures, health, wellness, medication, diet, and exercise. Transcribe accurately 
+"The following audio is from BluSanta, a healthcare conversation between an agent
+and a doctor. Topics include lifestyle diseases, allergies, symptoms, preventive
+measures, health, wellness, medication, diet, and exercise. Transcribe accurately
 with proper punctuation."
 ```
 
 ### Technical Details
 
 **Supported Features**:
+
 - ✅ Response formats: `json`, `text`, `verbose_json`
 - ✅ Language specification
 - ✅ Prompts (GPT-4o style)
@@ -46,6 +50,7 @@ with proper punctuation."
 - ⚠️ Note: `timestamp_granularities[]` not supported in gpt-4o models (only in whisper-1)
 
 **API Call**:
+
 ```python
 transcript = openai.audio.transcriptions.create(
     model="gpt-4o-transcribe",
@@ -61,20 +66,23 @@ transcript = openai.audio.transcriptions.create(
 ### [blusanta_zoom_stitch.py](blusanta_zoom_stitch.py)
 
 **Line 55**: Updated function docstring
+
 ```python
 def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str:
     """
     Generates subtitles from a video file using OpenAI GPT-4o Transcribe API.
-    
+
     Uses gpt-4o-transcribe model for higher quality transcription compared to whisper-1.
 ```
 
 **Lines 86-116**: Updated transcription call
+
 - Changed model from `whisper-1` to `gpt-4o-transcribe`
 - Improved prompt with full context description
 - Updated error handling and logging
 
 **Line 131**: Updated metadata
+
 ```python
 "Original Script: GPT-4o Transcribe API\n"
 ```
@@ -82,6 +90,7 @@ def generate_subtitles_with_openai(video_path: str, language: str = 'en') -> str
 ## Deployment
 
 ### Git Repository
+
 ```bash
 git add blusanta_zoom_stitch.py
 git commit -m "Upgrade to gpt-4o-transcribe for higher quality subtitle generation"
@@ -89,6 +98,7 @@ git push origin master
 ```
 
 ### VM Deployment
+
 ```powershell
 .\deploy-to-vm.ps1 -Restart
 ```
@@ -105,6 +115,7 @@ git push origin master
 ## Rollback Plan
 
 If issues arise, rollback by:
+
 1. Reverting to commit `02203be` (previous version)
 2. Or manually changing `model="gpt-4o-transcribe"` back to `model="whisper-1"`
 3. Redeploy with `.\deploy-to-vm.ps1 -Restart`
@@ -115,14 +126,14 @@ Full documentation: https://platform.openai.com/docs/api-reference/audio/createT
 
 ### Key Differences: whisper-1 vs gpt-4o-transcribe
 
-| Feature | whisper-1 | gpt-4o-transcribe |
-|---------|-----------|-------------------|
-| Response Formats | json, text, srt, verbose_json, vtt | json, text, verbose_json |
-| Timestamp Granularities | ✅ Supported | ❌ Not supported |
-| Prompts | ✅ Limited (224 tokens) | ✅ GPT-4o style |
-| Log Probabilities | ❌ Not supported | ✅ Supported |
-| Quality | Good | Higher |
-| Hallucinations | More likely | Less likely |
+| Feature                 | whisper-1                          | gpt-4o-transcribe        |
+| ----------------------- | ---------------------------------- | ------------------------ |
+| Response Formats        | json, text, srt, verbose_json, vtt | json, text, verbose_json |
+| Timestamp Granularities | ✅ Supported                       | ❌ Not supported         |
+| Prompts                 | ✅ Limited (224 tokens)            | ✅ GPT-4o style          |
+| Log Probabilities       | ❌ Not supported                   | ✅ Supported             |
+| Quality                 | Good                               | Higher                   |
+| Hallucinations          | More likely                        | Less likely              |
 
 ## Expected Improvements
 
@@ -137,7 +148,7 @@ Full documentation: https://platform.openai.com/docs/api-reference/audio/createT
 - **whisper-1**: $0.006 per minute
 - **gpt-4o-transcribe**: Pricing may vary, check current OpenAI pricing
 
-*Note: Monitor costs after deployment to ensure budget alignment*
+_Note: Monitor costs after deployment to ensure budget alignment_
 
 ---
 

@@ -231,6 +231,101 @@ def generate_subtitles_with_deepgram(video_path: str, language: str = 'en') -> s
         return None
 
 
+def generate_template_subtitles(video_path: str, template_type: str, doctor_first_name: str) -> str:
+    """
+    Generates template-based subtitles for greeting/thank-you segments.
+    
+    These segments have a fixed script with only the doctor's name varying.
+    Using templates ensures the doctor's name is spelled correctly (not transcribed).
+    
+    Args:
+        video_path: Path to the video file (used for output path)
+        template_type: Either 'greeting' (plc_000) or 'thankyou' (plc_001)
+        doctor_first_name: The doctor's first name to insert
+    
+    Returns:
+        str: Path to the generated .ass subtitle file
+    """
+    try:
+        # Get video duration using ffprobe
+        probe_cmd = [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", video_path
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        video_duration = float(result.stdout.strip()) if result.stdout.strip() else 4.0
+        
+        # Define templates with timing
+        if template_type == 'greeting':
+            # plc_000: "Dr. <name>, welcome, and thank you for joining us today."
+            # Split into readable chunks
+            subtitle_cues = [
+                {"start": 0.0, "end": min(1.8, video_duration * 0.45), 
+                 "text": f"Dr. {doctor_first_name}, welcome,"},
+                {"start": min(1.8, video_duration * 0.45), "end": video_duration, 
+                 "text": "and thank you for joining us today."}
+            ]
+        elif template_type == 'thankyou':
+            # plc_001: "Thank you, Dr. <name>,"
+            subtitle_cues = [
+                {"start": 0.0, "end": video_duration, 
+                 "text": f"Thank you, Dr. {doctor_first_name},"}
+            ]
+        else:
+            logger.warning(f"Unknown template type: {template_type}")
+            return None
+        
+        # Generate ASS subtitle file
+        subtitles_dir = os.path.join(os.path.dirname(video_path), 'subtitles')
+        os.makedirs(subtitles_dir, exist_ok=True)
+        
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
+        subtitle_path = os.path.join(subtitles_dir, f"{video_name}.ass")
+        
+        # ASS file header
+        script_info = (
+            "[Script Info]\n"
+            "Title: Template Subtitles\n"
+            "Original Script: BluSanta Template\n"
+            "ScriptType: v4.00\n"
+            "PlayResX: 1920\n"
+            "PlayResY: 1080\n\n"
+        )
+        
+        styles_info = (
+            "[V4+ Styles]\n"
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+            "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+            "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+            "Style: Default, Arial, 40, &H00FFFFFF, &H000000FF, &H00000000, &H00000000, 0, 0, 0, 0, 100, 100, "
+            "0, 0, 3, 1, 1, 2, 30, 30, 110, 1\n\n"
+        )
+        
+        events_header = (
+            "[Events]\n"
+            "Format: Marked, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+        )
+        
+        content = [script_info, styles_info, events_header]
+        
+        for cue in subtitle_cues:
+            start_time = format_ass_timestamp(cue["start"])
+            end_time = format_ass_timestamp(cue["end"])
+            safe_text = cue["text"].replace('\\', '\\\\').replace('{', '{{').replace('}', '}}')
+            dialogue = f"Dialogue: Marked=0,{start_time},{end_time},Default,,0,0,0,,{safe_text}\n"
+            content.append(dialogue)
+        
+        with open(subtitle_path, 'w', encoding='utf-8') as f:
+            f.write(''.join(content))
+        
+        logger.info(f"Template subtitles generated for {template_type}: {subtitle_path}")
+        return subtitle_path
+        
+    except Exception as e:
+        logger.error(f"Template subtitle generation failed: {e}")
+        return None
+
+
 def format_ass_timestamp(seconds: float) -> str:
     """
     Formats timestamp to ASS format (H:MM:SS.CC).
@@ -1564,23 +1659,39 @@ def blusanta_video_stitching(payload: Dict[str, Any]) -> bool:
                 # Check if this segment needs audio overlay
                 needs_audio_overlay = False
                 audio_file = None
+                template_type = None
                 for overlay in audio_overlays:
                     if overlay["segment_index"] == i:
                         needs_audio_overlay = True
                         audio_file = overlay["audio_path"]
+                        # Determine template type based on segment index
+                        # Segment 1 = plc_000 (greeting), Segment 6 = plc_001 (thankyou)
+                        if i == 1:
+                            template_type = "greeting"
+                        elif i == 6:
+                            template_type = "thankyou"
                         break
                 
                 if needs_audio_overlay and audio_file:
-                    # AUDIO OVERLAY SEGMENTS
+                    # AUDIO OVERLAY SEGMENTS (plc_000 and plc_001)
                     # Replace audio with ElevenLabs generated audio
                     temp_output = output_seg.replace('.mp4', '_temp.mp4')
                     replace_audio_and_trim(actor_vid, audio_file, temp_output)
                     logger.info(f"Part {part_num} (Audio Overlay): Audio replaced")
                     
-                    # Generate subtitles for audio overlay segment (TTS greeting/thank-you)
+                    # Generate subtitles for audio overlay segment
+                    # Use TEMPLATE subtitles for greeting/thankyou (accurate doctor name)
+                    # instead of transcription (which may misspell the name)
                     try:
                         logger.info(f"Generating subtitles for audio overlay segment {part_num}...")
-                        subtitle_path = generate_subtitles_with_deepgram(temp_output, 'en')
+                        if template_type and dr_first_name:
+                            # Use template-based subtitles for accurate doctor name
+                            logger.info(f"Using template subtitles ({template_type}) with doctor name: {dr_first_name}")
+                            subtitle_path = generate_template_subtitles(temp_output, template_type, dr_first_name)
+                        else:
+                            # Fallback to transcription if no template or name
+                            subtitle_path = generate_subtitles_with_deepgram(temp_output, 'en')
+                        
                         if subtitle_path and os.path.exists(subtitle_path):
                             overlay_with_subs = temp_output.replace('.mp4', '_with_subs.mp4')
                             apply_subtitles_to_video(temp_output, subtitle_path, overlay_with_subs)

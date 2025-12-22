@@ -83,6 +83,11 @@ export default function AssessmentForm() {
   // Fetch employee details when employee code changes
   useEffect(() => {
     if (formData.employeeCode && formData.employeeCode.length >= 4) {
+      // Only search if employees data is loaded
+      if (employees.length === 0) {
+        return; // Don't validate until data is loaded
+      }
+
       // Find employee with matching code
       const employee = employees.find(
         (emp) => emp["Emp Code"] === formData.employeeCode.toUpperCase()
@@ -101,10 +106,10 @@ export default function AssessmentForm() {
           employeeCode: "",
         }));
       } else {
-        // Set error if employee not found
+        // Only show error if employees are loaded but code not found
         setErrors((prev) => ({
           ...prev,
-          employeeCode: "Employee not found",
+          employeeCode: "Employee not found in MR list",
         }));
 
         // Clear fields
@@ -114,6 +119,12 @@ export default function AssessmentForm() {
           employeeMobile: "",
         }));
       }
+    } else if (formData.employeeCode.length < 4) {
+      // Clear error if user is still typing
+      setErrors((prev) => ({
+        ...prev,
+        employeeCode: "",
+      }));
     }
   }, [formData.employeeCode, employees]);
 
@@ -225,14 +236,16 @@ export default function AssessmentForm() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
+    const sanitizedValue =
+      name === "employeeCode" || name === "drCode" ? value.trim() : value;
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: sanitizedValue,
     }));
 
     // Validate the field
     if (name in errors) {
-      const errorMessage = validateField(name, value);
+      const errorMessage = validateField(name, sanitizedValue);
       setErrors((prev) => ({
         ...prev,
         [name]: errorMessage,
@@ -345,10 +358,10 @@ export default function AssessmentForm() {
     // Prepare final data with form data and video URLs to match the backend schema
     // Using drFirstName as namePronunciation for audio generation
     const finalData = {
-      employeeCode: formData.employeeCode,
+      employeeCode: formData.employeeCode.trim(),
       employeeName: formData.employeeName,
       employeeMobile: formData.employeeMobile,
-      drCode: formData.drCode,
+      drCode: formData.drCode.trim(),
       drFirstName: formData.drFirstName,
       drLastName: formData.drLastName,
       drMobile: formData.drMobile,
@@ -462,8 +475,11 @@ export default function AssessmentForm() {
                 value={formData.employeeCode}
                 onChange={handleInputChange}
                 className={`w-full p-2 border rounded bg-white text-black ${
-                  errors.employeeCode ? "border-red-500" : 
-                  formData.employeeName ? "border-green-500" : "border-gray-300"
+                  errors.employeeCode
+                    ? "border-red-500"
+                    : formData.employeeName
+                    ? "border-green-500"
+                    : "border-gray-300"
                 }`}
               />
               {errors.employeeCode && (
@@ -471,11 +487,13 @@ export default function AssessmentForm() {
                   {errors.employeeCode}
                 </p>
               )}
-              {!errors.employeeCode && formData.employeeName && formData.employeeCode && (
-                <p className="text-green-600 text-xs mt-1">
-                  ✓ Employee found in MR list
-                </p>
-              )}
+              {!errors.employeeCode &&
+                formData.employeeName &&
+                formData.employeeCode && (
+                  <p className="text-green-600 text-xs mt-1">
+                    ✓ Employee found in MR list
+                  </p>
+                )}
               {loading && (
                 <p className="text-gray-500 text-xs mt-1">
                   Loading employee data...
@@ -737,7 +755,9 @@ export default function AssessmentForm() {
                 type="submit"
                 className={`py-2 px-6 rounded-md transition-colors font-medium
                             ${
-                              !isUploaded || isSubmitting || !formData.employeeName
+                              !isUploaded ||
+                              isSubmitting ||
+                              !formData.employeeName
                                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                                 : "bg-green-500 hover:bg-green-600 text-white"
                             }

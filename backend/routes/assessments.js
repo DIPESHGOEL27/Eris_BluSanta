@@ -19,7 +19,7 @@ const { BLUSANTA_CONFIG } = require("../utils/constants");
  */
 router.post("/submit-assessment", async (req, res) => {
   try {
-    const {
+    let {
       employeeCode,
       employeeName,
       employeeMobile,
@@ -31,6 +31,14 @@ router.post("/submit-assessment", async (req, res) => {
       namePronunciation, // NEW: User-provided pronunciation for the name
       videos,
     } = req.body;
+
+    // Trim whitespace to avoid dirty data causing bad filenames/keys
+    employeeCode = (employeeCode || "").trim();
+    drCode = (drCode || "").trim();
+    employeeName = (employeeName || "").trim();
+    drFirstName = (drFirstName || "").trim();
+    drLastName = (drLastName || "").trim();
+    namePronunciation = (namePronunciation || "").trim();
 
     console.log(`[BLUSANTA] 📥 Received assessment submission:`);
     console.log(`  Employee: ${employeeCode} - ${employeeName}`);

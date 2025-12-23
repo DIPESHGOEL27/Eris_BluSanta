@@ -62,7 +62,7 @@ const ELEVENLABS_CONFIG = {
   baseUrl: "https://api.elevenlabs.io/v1",
 
   // BluSanta voice ID - UPDATE THIS with your actual voice ID
-  voiceId: process.env.ELEVENLABS_VOICE_ID || "your-blusanta-voice-id",
+  voiceId: process.env.ELEVENLABS_VOICE_ID || "Vwaaeyi5qlb8ApwGscgJ",
 
   // TTS settings
   modelId: "eleven_multilingual_v2", // High quality model
